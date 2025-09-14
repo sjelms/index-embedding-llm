@@ -211,3 +211,8 @@ __marimo__/
 .AppleDouble
 .LS
 /_helper/
+index-embedding-llm.code-workspace
+vault-embeddings.db
+
+# PyCharm
+/.idea/
