@@ -100,7 +100,16 @@ def main():
     parser = argparse.ArgumentParser(description="Index Obsidian vault markdown files with embeddings.")
     parser.add_argument("--dir", type=str, default=None, help="Relative subdirectory under vault to index")
     parser.add_argument("--exclude", type=str, action="append", default=[], help="Relative subdirectories to exclude")
+    parser.add_argument("--library-db", action="store_true", help="Index the 'Library Database' folder inside the vault")
+    parser.add_argument("--epub", action="store_true", help="Index the 'Epub' folder inside the vault")
     args = parser.parse_args()
+
+    if args.library_db:
+        args.dir = "Library Database"
+        print("Using --library-db flag: indexing 'Library Database' folder.")
+    elif args.epub:
+        args.dir = "Epub"
+        print("Using --epub flag: indexing 'Epub' folder.")
 
     print(f"Indexing Obsidian vault: {VAULT_PATH}")
 
