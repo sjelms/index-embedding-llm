@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "Youtube Transcript": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/jkawamoto/mcp-youtube-transcript",
+        "mcp-youtube-transcript"
+      ]
+    },
+    "mcp-obsidian": {
+      "command": "/opt/homebrew/bin/uvx",
+      "args": [
+        "mcp-obsidian"
+      ],
+      "env": {
+        "OBSIDIAN_API_KEY": "056080b361a9e04fdbce1b41e06e938dbb6b03b3397862afaaeec8814d0686fc",
+        "OBSIDIAN_HOST": "127.0.0.1",
+        "OBSIDIAN_PORT": "27124"
+      }
+    },
+    "mcp-vault-search": {
+      "command": "/Users/stephenelms/python-venv/bin/python3",
+      "args": [
+        "/Users/stephenelms/Dev/index-embedding-llm/mcp-vault-search.py"
+      ]
+    }
+  }
+}
