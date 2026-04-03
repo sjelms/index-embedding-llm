@@ -213,6 +213,8 @@ __marimo__/
 /_helper/
 index-embedding-llm.code-workspace
 vault-embeddings.db
+vault-index.db
+/MCP_Documentation/
 
 # PyCharm
 /.idea/
