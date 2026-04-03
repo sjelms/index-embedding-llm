@@ -13,6 +13,7 @@ class ChunkPayload:
     chunk_index: int
     title: str
     heading_path: str
+    aliases: str
     tags: str
     text: str
     chunk_hash: str
@@ -22,6 +23,7 @@ class ChunkPayload:
 @dataclass(slots=True)
 class ParsedDocument:
     title: str
+    aliases: list[str]
     tags: list[str]
     chunks: list[ChunkPayload]
 
@@ -35,21 +37,69 @@ def _split_frontmatter(text: str) -> tuple[str, str]:
     return parts[0][4:], parts[1]
 
 
-def _parse_frontmatter(frontmatter: str) -> tuple[str | None, list[str]]:
-    title = None
-    tags: list[str] = []
-    for line in frontmatter.splitlines():
-        key, _, value = line.partition(":")
-        if not _:
+def _strip_scalar(value: str) -> str:
+    return value.strip().strip("'").strip('"')
+
+
+def _parse_scalar_or_list(value: str) -> str | list[str]:
+    stripped = value.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        items = [
+            _strip_scalar(item)
+            for item in stripped[1:-1].split(",")
+            if _strip_scalar(item)
+        ]
+        return items
+    return _strip_scalar(stripped)
+
+
+def _append_frontmatter_value(target: dict[str, object], key: str, value: str) -> None:
+    parsed = _parse_scalar_or_list(value)
+    existing = target.get(key)
+    if isinstance(parsed, list):
+        existing_values = existing if isinstance(existing, list) else []
+        target[key] = [*existing_values, *parsed]
+        return
+    if isinstance(existing, list):
+        existing.append(parsed)
+        return
+    target[key] = parsed
+
+
+def _parse_frontmatter(frontmatter: str) -> tuple[str | None, list[str], list[str]]:
+    parsed: dict[str, object] = {}
+    current_key: str | None = None
+    for raw_line in frontmatter.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
             continue
-        key = key.strip().lower()
-        value = value.strip()
-        if key == "title" and value:
-            title = value.strip("'").strip('"')
-        elif key == "tags":
-            raw_tags = value.strip("[]")
-            tags.extend(tag.strip("- ").strip("'").strip('"') for tag in raw_tags.split(",") if tag.strip())
-    return title, [tag for tag in tags if tag]
+        stripped = line.strip()
+        if stripped.startswith("- ") and current_key:
+            existing = parsed.setdefault(current_key, [])
+            if isinstance(existing, list):
+                existing.append(_strip_scalar(stripped[2:]))
+            continue
+        key, separator, value = line.partition(":")
+        if not separator:
+            current_key = None
+            continue
+        current_key = key.strip().lower()
+        if value.strip():
+            _append_frontmatter_value(parsed, current_key, value)
+        else:
+            parsed.setdefault(current_key, [])
+
+    title = parsed.get("title")
+    term = parsed.get("term")
+    aliases = parsed.get("aliases") or []
+    tags = parsed.get("tags") or []
+
+    normalized_title = title if isinstance(title, str) and title else None
+    normalized_term = term if isinstance(term, str) and term else None
+    normalized_aliases = [alias for alias in aliases if isinstance(alias, str) and alias]
+    normalized_tags = [tag for tag in tags if isinstance(tag, str) and tag]
+
+    return normalized_title or normalized_term, normalized_aliases, normalized_tags
 
 
 def _normalize_tags(text: str) -> list[str]:
@@ -122,8 +172,9 @@ def _paragraph_chunks(section_text: str, max_words: int = 380, overlap_words: in
 
 def parse_markdown(relative_path: str, text: str) -> ParsedDocument:
     frontmatter, body = _split_frontmatter(text)
-    frontmatter_title, frontmatter_tags = _parse_frontmatter(frontmatter)
+    frontmatter_title, frontmatter_aliases, frontmatter_tags = _parse_frontmatter(frontmatter)
     title = frontmatter_title or Path(relative_path).stem
+    aliases = sorted({alias for alias in frontmatter_aliases if alias and alias != title})
     inline_tags = _normalize_tags(body)
     all_tags = sorted({*frontmatter_tags, *inline_tags})
 
@@ -141,6 +192,7 @@ def parse_markdown(relative_path: str, text: str) -> ParsedDocument:
                     chunk_index=chunk_index,
                     title=title,
                     heading_path=heading_path,
+                    aliases=", ".join(aliases),
                     tags=", ".join(all_tags),
                     text=chunk_text,
                     chunk_hash=chunk_hash,
@@ -154,10 +206,11 @@ def parse_markdown(relative_path: str, text: str) -> ParsedDocument:
                 chunk_index=0,
                 title=title,
                 heading_path="",
+                aliases=", ".join(aliases),
                 tags=", ".join(all_tags),
                 text=body.strip(),
                 chunk_hash="",
                 word_count=len(body.split()),
             )
         )
-    return ParsedDocument(title=title, tags=all_tags, chunks=chunks)
+    return ParsedDocument(title=title, aliases=aliases, tags=all_tags, chunks=chunks)

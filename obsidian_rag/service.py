@@ -12,7 +12,7 @@ from time import perf_counter
 from typing import TextIO
 
 from .config import AppConfig
-from .db import FileFingerprint, IndexDatabase, metadata_json
+from .db import SCHEMA_VERSION, FileFingerprint, IndexDatabase, metadata_json
 from .lm_studio import LMStudioClient, LMStudioError
 from .markdown import parse_markdown
 
@@ -352,13 +352,22 @@ class VaultService:
                                     "chunk_index": chunk.chunk_index,
                                     "title": chunk.title,
                                     "heading_path": chunk.heading_path,
+                                    "aliases": chunk.aliases,
                                     "tags": chunk.tags,
                                     "text": chunk.text,
                                     "chunk_hash": chunk_hash,
                                     "word_count": chunk.word_count,
                                 }
                             )
-                            chunk_texts.append(chunk.text)
+                            chunk_texts.append(
+                                self._embedding_input(
+                                    title=chunk.title,
+                                    aliases=chunk.aliases,
+                                    heading_path=chunk.heading_path,
+                                    tags=chunk.tags,
+                                    text=chunk.text,
+                                )
+                            )
                         progress.file_stage(index=index, relative_path=pending.relative_path, stage="embed")
                         vectors = self.lm_studio.embed_texts(chunk_texts, model_key) if chunk_texts else []
                         if vectors:
@@ -452,7 +461,7 @@ class VaultService:
         issues: list[str] = []
         if not Path(self.config.index_db_path).exists():
             issues.append("Index database does not exist yet.")
-        if metadata.get("schema_version") != "1":
+        if metadata.get("schema_version") != SCHEMA_VERSION:
             issues.append("Index schema version is missing or unsupported.")
         if "embedding_model" not in metadata:
             issues.append("Index metadata is missing the embedding model.")
@@ -687,6 +696,18 @@ class VaultService:
             snippet = top_chunk.get("snippet", "")
             lines.append(f"{index}. {result['path']} ({result['score']:.4f}) - {snippet}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _embedding_input(*, title: str, aliases: str, heading_path: str, tags: str, text: str) -> str:
+        preface_parts = [f"title: {title}"]
+        if aliases:
+            preface_parts.append(f"aliases: {aliases}")
+        if heading_path:
+            preface_parts.append(f"heading: {heading_path}")
+        if tags:
+            preface_parts.append(f"tags: {tags}")
+        preface = "\n".join(preface_parts)
+        return f"{preface}\n\n{text}".strip()
 
     def _build_log_path(self, timestamp: str) -> Path:
         safe_timestamp = timestamp.replace(":", "-")

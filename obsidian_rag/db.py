@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 @dataclass(slots=True)
@@ -64,6 +64,7 @@ class IndexDatabase:
                 chunk_index INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 heading_path TEXT NOT NULL,
+                aliases TEXT NOT NULL DEFAULT '',
                 tags TEXT NOT NULL,
                 text TEXT NOT NULL,
                 chunk_hash TEXT NOT NULL,
@@ -88,13 +89,53 @@ class IndexDatabase:
                 relative_path,
                 title,
                 heading_path,
+                aliases,
                 tags,
                 text,
                 tokenize='unicode61'
             );
             """
         )
+        self._migrate_schema()
         self.set_metadata({"schema_version": SCHEMA_VERSION})
+
+    def _migrate_schema(self) -> None:
+        chunk_columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(chunks)").fetchall()
+        }
+        if "aliases" not in chunk_columns:
+            self.conn.execute("ALTER TABLE chunks ADD COLUMN aliases TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
+
+        fts_columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(fts_chunks)").fetchall()
+        }
+        if "aliases" not in fts_columns:
+            self.conn.execute("DROP TABLE IF EXISTS fts_chunks")
+            self.conn.execute(
+                """
+                CREATE VIRTUAL TABLE fts_chunks USING fts5(
+                    relative_path,
+                    title,
+                    heading_path,
+                    aliases,
+                    tags,
+                    text,
+                    tokenize='unicode61'
+                )
+                """
+            )
+            self.conn.execute(
+                """
+                INSERT INTO fts_chunks(rowid, relative_path, title, heading_path, aliases, tags, text)
+                SELECT chunks.id, files.relative_path, chunks.title, chunks.heading_path, chunks.aliases, chunks.tags, chunks.text
+                FROM chunks
+                JOIN files ON files.id = chunks.file_id
+                """
+            )
+            self.conn.commit()
 
     def set_metadata(self, values: dict[str, str]) -> None:
         self.conn.executemany(
@@ -207,14 +248,15 @@ class IndexDatabase:
             for payload, vector in zip(chunk_payloads, vectors):
                 cursor = self.conn.execute(
                     """
-                    INSERT INTO chunks(file_id, chunk_index, title, heading_path, tags, text, chunk_hash, word_count, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO chunks(file_id, chunk_index, title, heading_path, aliases, tags, text, chunk_hash, word_count, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         file_id,
                         payload["chunk_index"],
                         payload["title"],
                         payload["heading_path"],
+                        payload["aliases"],
                         payload["tags"],
                         payload["text"],
                         payload["chunk_hash"],
@@ -237,14 +279,15 @@ class IndexDatabase:
                 )
                 self.conn.execute(
                     """
-                    INSERT INTO fts_chunks(rowid, relative_path, title, heading_path, tags, text)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO fts_chunks(rowid, relative_path, title, heading_path, aliases, tags, text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         chunk_id,
                         fingerprint.relative_path,
                         payload["title"],
                         payload["heading_path"],
+                        payload["aliases"],
                         payload["tags"],
                         payload["text"],
                     ),
@@ -274,6 +317,7 @@ class IndexDatabase:
                 chunks.chunk_index,
                 chunks.title,
                 chunks.heading_path,
+                chunks.aliases,
                 chunks.tags,
                 chunks.text,
                 embeddings.vector
@@ -296,9 +340,10 @@ class IndexDatabase:
                 chunks.chunk_index,
                 chunks.title,
                 chunks.heading_path,
+                chunks.aliases,
                 chunks.tags,
                 chunks.text,
-                bm25(fts_chunks) AS keyword_rank
+                bm25(fts_chunks, 2.0, 5.0, 3.0, 6.0, 2.0, 1.0) AS keyword_rank
             FROM fts_chunks
             JOIN chunks ON chunks.id = fts_chunks.rowid
             JOIN files ON files.id = chunks.file_id
