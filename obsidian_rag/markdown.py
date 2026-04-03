@@ -6,6 +6,11 @@ from pathlib import Path
 
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
+WIKILINK_RE = re.compile(r"!?"
+                         r"\[\["
+                         r"([^\]|#]+(?:#[^\]|]+)?)"
+                         r"(?:\|([^\]]+))?"
+                         r"\]\]")
 
 
 @dataclass(slots=True)
@@ -15,6 +20,7 @@ class ChunkPayload:
     heading_path: str
     aliases: str
     tags: str
+    related_terms: str
     text: str
     chunk_hash: str
     word_count: int
@@ -25,6 +31,7 @@ class ParsedDocument:
     title: str
     aliases: list[str]
     tags: list[str]
+    related_terms: list[str]
     chunks: list[ChunkPayload]
 
 
@@ -66,7 +73,7 @@ def _append_frontmatter_value(target: dict[str, object], key: str, value: str) -
     target[key] = parsed
 
 
-def _parse_frontmatter(frontmatter: str) -> tuple[str | None, list[str], list[str]]:
+def _parse_frontmatter(frontmatter: str) -> dict[str, object]:
     parsed: dict[str, object] = {}
     current_key: str | None = None
     for raw_line in frontmatter.splitlines():
@@ -89,22 +96,87 @@ def _parse_frontmatter(frontmatter: str) -> tuple[str | None, list[str], list[st
         else:
             parsed.setdefault(current_key, [])
 
-    title = parsed.get("title")
-    term = parsed.get("term")
-    aliases = parsed.get("aliases") or []
-    tags = parsed.get("tags") or []
-
-    normalized_title = title if isinstance(title, str) and title else None
-    normalized_term = term if isinstance(term, str) and term else None
-    normalized_aliases = [alias for alias in aliases if isinstance(alias, str) and alias]
-    normalized_tags = [tag for tag in tags if isinstance(tag, str) and tag]
-
-    return normalized_title or normalized_term, normalized_aliases, normalized_tags
+    return parsed
 
 
 def _normalize_tags(text: str) -> list[str]:
     tags = {match.group(1) for match in re.finditer(r"(?:^|\s)#([\w/-]+)", text)}
     return sorted(tags)
+
+
+def _normalize_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item]
+    if isinstance(value, str) and value:
+        return [value]
+    return []
+
+
+def _normalize_relation_term(term: str) -> list[str]:
+    normalized = term.strip().strip("|").strip()
+    if not normalized:
+        return []
+    variants = {normalized}
+    if normalized.startswith("@") and len(normalized) > 1:
+        variants.add(normalized[1:])
+    if "/" in normalized:
+        leaf = Path(normalized).name.strip()
+        if leaf:
+            variants.add(leaf)
+    return sorted(variants)
+
+
+def _extract_wikilink_terms(text: str) -> list[str]:
+    terms: set[str] = set()
+    for target, alias in WIKILINK_RE.findall(text):
+        for candidate in (target, alias):
+            if not candidate:
+                continue
+            terms.update(_normalize_relation_term(candidate))
+    return sorted(terms)
+
+
+def _plain_relation_value(value: str) -> str:
+    stripped = value.strip()
+    if not stripped or WIKILINK_RE.search(stripped):
+        return ""
+    return stripped
+
+
+def _interesting_frontmatter_key(key: str) -> bool:
+    if key in {
+        "author",
+        "booktitle",
+        "category",
+        "editor",
+        "field",
+        "institution",
+        "journal",
+        "journaltitle",
+        "key",
+        "organization",
+        "publisher",
+        "see also",
+        "type",
+    }:
+        return True
+    return bool(re.fullmatch(r"(?:author|editor)\s*-\s*\d+", key))
+
+
+def _extract_related_terms(frontmatter: dict[str, object], body: str) -> list[str]:
+    terms: set[str] = set()
+    for key, value in frontmatter.items():
+        values = _normalize_list(value)
+        for item in values:
+            wikilink_terms = _extract_wikilink_terms(item)
+            if wikilink_terms:
+                terms.update(wikilink_terms)
+            if _interesting_frontmatter_key(key):
+                plain_value = _plain_relation_value(item)
+                if plain_value:
+                    terms.update(_normalize_relation_term(plain_value))
+    terms.update(_extract_wikilink_terms(body))
+    return sorted(terms)
 
 
 def _make_heading_path(stack: list[str]) -> str:
@@ -172,11 +244,26 @@ def _paragraph_chunks(section_text: str, max_words: int = 380, overlap_words: in
 
 def parse_markdown(relative_path: str, text: str) -> ParsedDocument:
     frontmatter, body = _split_frontmatter(text)
-    frontmatter_title, frontmatter_aliases, frontmatter_tags = _parse_frontmatter(frontmatter)
+    parsed_frontmatter = _parse_frontmatter(frontmatter)
+    title_value = parsed_frontmatter.get("title")
+    term_value = parsed_frontmatter.get("term")
+    frontmatter_aliases = _normalize_list(parsed_frontmatter.get("aliases"))
+    frontmatter_tags = _normalize_list(parsed_frontmatter.get("tags"))
+    frontmatter_title = title_value if isinstance(title_value, str) and title_value else None
+    frontmatter_term = term_value if isinstance(term_value, str) and term_value else None
     title = frontmatter_title or Path(relative_path).stem
+    if frontmatter_term and frontmatter_term != title:
+        frontmatter_aliases.append(frontmatter_term)
     aliases = sorted({alias for alias in frontmatter_aliases if alias and alias != title})
     inline_tags = _normalize_tags(body)
     all_tags = sorted({*frontmatter_tags, *inline_tags})
+    related_terms = sorted(
+        {
+            term
+            for term in _extract_related_terms(parsed_frontmatter, body)
+            if term and term != title and term not in aliases
+        }
+    )
 
     chunks: list[ChunkPayload] = []
     chunk_index = 0
@@ -194,6 +281,7 @@ def parse_markdown(relative_path: str, text: str) -> ParsedDocument:
                     heading_path=heading_path,
                     aliases=", ".join(aliases),
                     tags=", ".join(all_tags),
+                    related_terms=", ".join(related_terms),
                     text=chunk_text,
                     chunk_hash=chunk_hash,
                     word_count=word_count,
@@ -208,9 +296,10 @@ def parse_markdown(relative_path: str, text: str) -> ParsedDocument:
                 heading_path="",
                 aliases=", ".join(aliases),
                 tags=", ".join(all_tags),
+                related_terms=", ".join(related_terms),
                 text=body.strip(),
                 chunk_hash="",
                 word_count=len(body.split()),
             )
         )
-    return ParsedDocument(title=title, aliases=aliases, tags=all_tags, chunks=chunks)
+    return ParsedDocument(title=title, aliases=aliases, tags=all_tags, related_terms=related_terms, chunks=chunks)

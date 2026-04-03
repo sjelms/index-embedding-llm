@@ -354,6 +354,7 @@ class VaultService:
                                     "heading_path": chunk.heading_path,
                                     "aliases": chunk.aliases,
                                     "tags": chunk.tags,
+                                    "related_terms": chunk.related_terms,
                                     "text": chunk.text,
                                     "chunk_hash": chunk_hash,
                                     "word_count": chunk.word_count,
@@ -365,6 +366,7 @@ class VaultService:
                                     aliases=chunk.aliases,
                                     heading_path=chunk.heading_path,
                                     tags=chunk.tags,
+                                    related_terms=chunk.related_terms,
                                     text=chunk.text,
                                 )
                             )
@@ -698,7 +700,7 @@ class VaultService:
         return "\n".join(lines)
 
     @staticmethod
-    def _embedding_input(*, title: str, aliases: str, heading_path: str, tags: str, text: str) -> str:
+    def _embedding_input(*, title: str, aliases: str, heading_path: str, tags: str, related_terms: str, text: str) -> str:
         preface_parts = [f"title: {title}"]
         if aliases:
             preface_parts.append(f"aliases: {aliases}")
@@ -706,6 +708,8 @@ class VaultService:
             preface_parts.append(f"heading: {heading_path}")
         if tags:
             preface_parts.append(f"tags: {tags}")
+        if related_terms:
+            preface_parts.append(f"related terms: {related_terms}")
         preface = "\n".join(preface_parts)
         return f"{preface}\n\n{text}".strip()
 

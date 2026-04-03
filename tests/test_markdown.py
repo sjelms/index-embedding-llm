@@ -43,6 +43,28 @@ Short body about workplace learning.
         self.assertEqual(parsed.chunks[0].aliases, "WALF, Working as Learning Framework")
         self.assertIn("thesis", parsed.tags)
 
+    def test_parse_markdown_extracts_related_terms_from_frontmatter_and_wikilinks(self) -> None:
+        text = """---
+title: Improving Working As Learning
+author - 1: "[[Alison Fuller]]"
+key: "[[@Felstead2009-kt]]"
+see also:
+  - "[[Working as Learning Framework (WALF)]]"
+tags:
+  - workplace-learning
+---
+## Content
+[[@Felstead2009-kt|Improving Working As Learning]]
+[[Alison Fuller]]
+"""
+        parsed = parse_markdown("bibtex-to-markdown/titles/@Felstead2009-kt.md", text)
+        self.assertIn("Alison Fuller", parsed.related_terms)
+        self.assertIn("@Felstead2009-kt", parsed.related_terms)
+        self.assertIn("Felstead2009-kt", parsed.related_terms)
+        self.assertIn("Working as Learning Framework (WALF)", parsed.related_terms)
+        self.assertNotIn("Improving Working As Learning", parsed.related_terms)
+        self.assertIn("Alison Fuller", parsed.chunks[0].related_terms)
+
     def test_filter_spec_normalizes_include_and_exclude_values(self) -> None:
         filters = FilterSpec.from_raw(
             {"include_dirs": [" AI + Code/ "], "exclude_dirs": ["Readwise/"]},
