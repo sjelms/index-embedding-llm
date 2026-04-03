@@ -65,13 +65,27 @@ def main(argv: list[str] | None = None) -> None:
 def _handle_index_command(service: VaultService, args: argparse.Namespace) -> None:
     if args.index_command == "build":
         filters = FilterSpec.from_raw(include=args.include, exclude=args.exclude)
-        result = service.build_index(full=True, dry_run=args.dry_run, filters=filters)
+        result = service.build_index(
+            full=True,
+            dry_run=args.dry_run,
+            filters=filters,
+            progress_output=sys.stderr,
+            show_progress=not args.json,
+        )
         _emit(args.json, result)
+        _exit_if_failures(result)
         return
     if args.index_command == "sync":
         filters = FilterSpec.from_raw(include=args.include, exclude=args.exclude)
-        result = service.build_index(full=False, dry_run=args.dry_run, filters=filters)
+        result = service.build_index(
+            full=False,
+            dry_run=args.dry_run,
+            filters=filters,
+            progress_output=sys.stderr,
+            show_progress=not args.json,
+        )
         _emit(args.json, result)
+        _exit_if_failures(result)
         return
     if args.index_command == "status":
         result = service.index_status()
@@ -100,3 +114,14 @@ def _emit(as_json: bool, payload: dict[str, object]) -> None:
             print(json.dumps(value, indent=2, sort_keys=True))
         else:
             print(f"{key}: {value}")
+
+
+def _exit_if_failures(result: dict[str, object]) -> None:
+    failed = int(result.get("failed", 0) or 0)
+    if failed <= 0:
+        return
+    log_path = result.get("log_path")
+    message = f"Indexing completed with {failed} failed file(s)."
+    if log_path:
+        message += f" See {log_path} for details."
+    raise SystemExit(message)

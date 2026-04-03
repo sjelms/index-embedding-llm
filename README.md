@@ -82,6 +82,18 @@ What this does:
 - writes a new SQLite index
 - records which embedding model was used
 
+What you will see while it runs:
+
+- how many files are queued
+- current stage for each file: `read`, `parse`, `embed`, `write`
+- percent complete
+- elapsed time
+- estimated remaining time
+- per-file processing time
+- rolling throughput in files/sec and chunks/sec
+
+Each run also writes a timestamped JSONL log under `.obsidian-rag/runs/`.
+
 If you want to test on a smaller subset first:
 
 ```bash
@@ -115,6 +127,13 @@ Preview the next sync without changing anything:
 ```bash
 uv run obsidian-rag index sync --dry-run --json
 ```
+
+If a file fails during build or sync:
+
+- the failure is printed in the terminal
+- the run log records the failing file, stage, and error message
+- the command exits non-zero after finishing the pass
+- successfully indexed files remain written to the index
 
 Use a full rebuild again only if:
 

@@ -51,7 +51,7 @@ class AppConfig:
             PROJECT_ROOT / "vault-index.db",
         )
         lm_studio_base_url = os.getenv("LM_STUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
-        embedding_model_hint = os.getenv("EMBEDDING_MODEL", "embeddinggemma-300m-qat").strip()
+        embedding_model_hint = os.getenv("EMBEDDING_MODEL", "google/embedding-gemma-300m").strip()
         top_k_default = int(os.getenv("TOP_K_DEFAULT", "5"))
         return cls(
             project_root=PROJECT_ROOT,
