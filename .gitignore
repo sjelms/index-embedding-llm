@@ -219,3 +219,5 @@ vault-index.db
 
 # PyCharm
 /.idea/
+vault-index.db-wal
+vault-index.db-shm
