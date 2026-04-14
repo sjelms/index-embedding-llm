@@ -26,14 +26,22 @@ def vault_get_note(path: str) -> dict[str, object]:
 
 @mcp.tool()
 def vault_semantic_search(query: str, top_k: int | None = None, filters: dict | None = None) -> dict[str, object]:
-    """Perform semantic-only retrieval across the indexed vault."""
+    """Perform semantic-only retrieval across the indexed vault.
+    
+    When gathering evidence for concepts or literature reviews, you MUST extract from multiple distinct files.
+    Do not stop at the first highly ranked file. Use vault_get_note on multiple secondary matches to ensure diverse sources.
+    """
     filter_spec = FilterSpec.from_raw(filters)
     return service.semantic_search(query, top_k=top_k or service.config.top_k_default, filters=filter_spec)
 
 
 @mcp.tool()
 def vault_hybrid_search(query: str, top_k: int | None = None, filters: dict | None = None) -> dict[str, object]:
-    """Perform hybrid semantic and FTS retrieval across the indexed vault."""
+    """Perform hybrid semantic and FTS retrieval across the indexed vault.
+    
+    When gathering evidence for concepts or literature reviews, you MUST extract from multiple distinct files.
+    Do not stop at the first highly ranked file. Use vault_get_note on multiple secondary matches to ensure diverse sources.
+    """
     filter_spec = FilterSpec.from_raw(filters)
     return service.hybrid_search(query, top_k=top_k or service.config.top_k_default, filters=filter_spec)
 

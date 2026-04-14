@@ -352,7 +352,7 @@ class IndexDatabase:
                 chunks.tags,
                 chunks.related_terms,
                 chunks.text,
-                bm25(fts_chunks, 2.0, 5.0, 3.0, 6.0, 2.0, 5.0, 1.0) AS keyword_rank
+                bm25(fts_chunks, 2.0, 4.0, 3.0, 3.0, 2.0, 3.0, 6.0) AS keyword_rank
             FROM fts_chunks
             JOIN chunks ON chunks.id = fts_chunks.rowid
             JOIN files ON files.id = chunks.file_id
